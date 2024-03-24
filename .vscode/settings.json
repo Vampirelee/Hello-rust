@@ -1,0 +1,3 @@
+{
+  "rust-analyzer.linkedProjects": ["./second-chapter/actix-gcd/Cargo.toml"]
+}
