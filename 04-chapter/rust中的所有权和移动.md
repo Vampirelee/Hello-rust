@@ -225,3 +225,95 @@ assert_eq!(composers[0].name, None);
 // let first_name = std::mem::replace(&mut composers[0].name, None);
 let first_name = composers[0].name.take();
 ```
+
+## 1.4 Copy 类型，关于移动的例外情况
+
+目前为止，我们讨论的移动示例都涉及向量、字符串和其他可能占用大量内存且复制成本极高的类型。移动能让这些类型的所有权清晰且开销成本极低。但对于像 整型、字符、浮点数以及布尔类型，使用移动反而会让事情变得复杂。
+
+我们来看下简单类型和复杂类型在赋值操作上有什么异同：
+
+```rust
+let string1 = "somnambulance".to_string();
+let string2 = str1;
+
+let num1:i32 = 32;
+let num2 = num1;
+```
+
+上面的代码运行后，内存示意图如下
+![](./images/5.png)
+
+与前面的向量一样，赋值会将 string1 转移给 string2，这样就不 会出现两个字符串负责释放同一个缓冲区的情况。但是，num1 和 num2 的情况有所不同。i32 只是内存中的几字节，它不拥有任何堆和资源，也不会实际依赖除本身的字节之外的任何内存。当我们将它的每一位转移给 num2 时，其实已经为 num1 制作了一个完全独立的副本。
+
+在 Rust 中，`Copy`类型的数据进行赋值或者传入给函数操作时，是不会发生移动的，它会直接生成一个副本。赋值的源不会发生任何变化，依然是初始化状态并且可能。两者的所有权不会转移。互不影响。
+
+那么在 Rust 中，哪些是`Copy`类型呢？主要有以下几类：
+
+- 整型
+- 浮点型
+- 布尔型
+- 字符
+- 以及上面几种类型组成的元组类型
+
+根据经验，任何在丢弃值时需要特殊处理的类型都不是`Copy`类型，比如字符串、向量等。用户自定义`struct`和`enum`默认情况下都不是`Copy`类型。
+
+```rust
+struct Label {
+    number: u32,
+}
+
+fn main() {
+    let l = Label { number: 3 };
+    print(l);
+
+    /* 这里会报错
+    borrow of moved value: `l`
+    value borrowed here after moverustcClick for full compiler diagnostic
+    macros.rs(143, 28): Error originated from macro call here
+    main.rs(8, 5): Error originated from macro call here
+    main.rs(7, 11): value moved here
+    main.rs(6, 9): move occurs because `l` has type `Label`, which does not implement the `Copy` trait
+    main.rs(11, 13): consider changing this parameter type in function `print` to borrow instead if owning the value isn't necessary
+     */
+    println!("My label number is: {}", l.number);
+}
+
+fn print(l: Label) {
+    println!("STAMP: {}", l.number)
+}
+```
+
+但是，如果结构体中的所有字段本身都是`Copy`类型的话，我们可以通过 `#[derive(Copy, Clone)]`放置在此定义之上来创建`Copy`类型。
+
+```rust
+#[derive(Copy, Clone)]
+struct Label {
+    number: u32,
+}
+
+fn main() {
+    let l = Label { number: 3 };
+    print(l);
+    // 由于定义了#[derive(Copy, Clone)] 宏，此结构体为 Copy 类型，这里便不会报错了
+    println!("My label number is: {}", l.number);
+}
+
+fn print(l: Label) {
+    println!("STAMP: {}", l.number)
+}
+```
+
+如果结构体中存在字段不是`Copy`类型，那么定义`#[derive(Copy, Clone)]`宏就会报错:
+
+```rust
+// the trait `Copy` cannot be implemented for this typerustcClick for full compiler diagnostic
+// main.rs(4, 5): this field does not implement `Copy`
+#[derive(Copy, Clone)]
+struct Label {
+    number: String,
+}
+```
+
+> 这里思考一下：为什么 Rust 不把符合条件的结构体类型自动变为 `Copy`类型，而需要添加一个 `#[derive(Copy, Clone)]`宏呢？
+>
+> 实际上是开发体验上的问题，创建一个 Copy 类型代表着实现者的郑重承诺:如果以后确有必要将其改为非 Copy 类型，则使用它的大部分代码可能需要进行调整 (Copy 类型和非 Copy 类型在赋值和函数传参上有很多差别)。
