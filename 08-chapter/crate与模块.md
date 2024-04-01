@@ -169,6 +169,7 @@ use std::io::prelude::*; // 导入所有语法项。
 ```
 
 可以使用 as 导入一个语法项，但在本地赋予它一个不同的名称
+
 ```rust
 use std::io::Result as IOResult;
 
@@ -181,3 +182,38 @@ fn save_spore(spore: &Spore) -> IOResult<()>
 - super 表示父模块
 - crate 指的是当前 crate
 
+### 标准库的预导入
+
+标准库 std 会自动链接到每个项目。这意味着我们可以使用可以 使用 `use std::whatever`。另一方面，还有一些特别的便捷名称入`Vec`和`Result`会包含在标准库预导入中并自动导入。Rust 的行为就好像每个模块（包括根模块）有用以下导入语句开头一样。
+
+```rust
+use std::prelude::v1::*;
+```
+
+### 公开 use 声明
+
+虽然 use 声明只是个别名，但也可以公开它们
+
+```rust
+// 在 plant_structures/mod.rs
+pub use self::leaves::Leaf;
+pub use self::roots::Root;
+```
+
+这意味着 Leaf 和 Root 是 plant_structures 模块的公共语法项。它们还是 plant_structures::leaves::Leaf 和 plant_structures::roots::Root 的简单别名。
+
+### 公开结构体字段
+
+结构体的字段，甚至是私有字段，都可以在声明该结构体的整个模块及其子模块中访问。在模块之外，只能访问公共字段。
+
+### 静态变量与常量
+
+除了函数、类型和嵌套模块，模块还可以定义常量和静态变量。常量有点儿像 C++ 的 #define: 该值在每个使用了它的地方都会编译到你的代码中。静态变量是在程序开始运行之前设置并持续到程序退出的变量。
+
+```rust
+// 定义常量
+pub const ROOM_TEMPERATURE: f64 = 20.0;
+
+// 定义静态变量
+pub static ROOM_TEMPERATURE: f64 = 68.0;
+```
