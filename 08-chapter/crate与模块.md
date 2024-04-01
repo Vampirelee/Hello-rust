@@ -280,3 +280,23 @@ fn test_divide_by_zero_error() {
   1/0
 }
 ```
+
+## 指定依赖项
+
+- 通过版本号 `image = "0.6.1"` 此 crate 默认会从 crates.io 上获取。
+- 通过 Git 存储库 URL 和修订号
+
+```rust
+image = { git = "https://github.com/Piston/image.git", rev = "528f19c"}
+```
+
+- 指向一个包含 crate 源代码的目录
+
+```rust
+image = { path = "vendor/image" }
+
+```
+
+## 版本
+
+准寻大多数语义化版本
