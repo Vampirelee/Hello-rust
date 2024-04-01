@@ -253,3 +253,30 @@ pub struct git_error {
 ```
 
 `#![feature]` 属性用于启用 Rust 语言和库的不稳定性，这些特性是实验性的。因此可能有 bug 或者未来可能会被更改或移出。Rust 团队有时会将实验性特性下来，使其成为语言标准的一部分。那时这个 `#![feature]` 属性就会变得多余，因此 Rust 会生成一个警告，建议你将其移除。
+
+## 测试与文档
+
+Rust 中内置了一个简单的单元测试框架。测试是标有 `#[test]` 属性的普通函数
+
+```rust
+#[test]
+fn math_works() {
+  let x: i32 = 1;
+  assert!(x.is_positive());
+  assert_eq!(x + 1, 2);
+}
+```
+
+- `assert!` 和 `assert_eq!` 会包含在发布构建中。
+- `debug_assert!` 和 `debug_assert_eq!` 来编写仅在调试构建中检查的断言。
+
+要测试各种错误的情况，请将 `#[should_panic]`属性添加到你的测试中：
+
+```rust
+#[test]
+#[allow(unconditional_panic, unused_must_use)]
+#[should_panic(expected="divede by zero")]
+fn test_divide_by_zero_error() {
+  1/0
+}
+```
