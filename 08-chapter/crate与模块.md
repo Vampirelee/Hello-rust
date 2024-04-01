@@ -300,3 +300,38 @@ image = { path = "vendor/image" }
 ## 版本
 
 准寻大多数语义化版本
+
+## 工作空间
+
+随着项目不断更新迭代，你最终会写出很多 crate。它们并存于同一个源代码存储库中：
+
+```
+fernsoft/
+├── .git/...
+├── fern_sim/
+│   ├── Cargo.toml
+│   ├── Cargo.lock
+│ ├── src/...
+│   └── target/...
+├── fern_img/
+│   ├── Cargo.toml
+│   ├── Cargo.lock
+│ ├── src/...
+│   └── target/...
+└── fern_video/
+    ├── Cargo.toml
+    ├── Cargo.lock
+    ├── src/...
+    └── target/...
+```
+
+Cargo 的工作方式是，每个 crate 都有自己的构建目录 target， 其中包含该 crate 的所有依赖项的单独构建。这些构建目录是完全独立的。即使两个 crate 具有共同的依赖项，它们也不能共享任何已编译的代码。这好像有点儿浪费。
+
+可以使用 Cargo 工作空间来节省编译时间和磁盘空间。Cargo 工作空间是一组 crate。它们共享着公共构建目录和 Cargo.lock 文件。
+
+你需要做的就是在存储库的根目录中创建一个 Cargo.toml 文件，并将下面这两行代码放入其中:
+
+```rust
+[workspace]
+members = ["fern_sim", "fern_img", "fern_video"]
+```
