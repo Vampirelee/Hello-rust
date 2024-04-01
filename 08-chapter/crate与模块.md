@@ -217,3 +217,39 @@ pub const ROOM_TEMPERATURE: f64 = 20.0;
 // 定义静态变量
 pub static ROOM_TEMPERATURE: f64 = 68.0;
 ```
+
+## 属性
+
+Rust 程序中的任何语法都可以用属性进行装饰。属性是 Rust 的通用语法，用于向编译器提供各种指令和建议。
+
+```rust
+// 使用#[allow]允许某种警告。
+#[allow(non_camel_case_types)]
+pub struct git_revspec {}
+```
+
+条件编译是使用名为 #[cfg] 的属性编写的另一项特性
+
+```rust
+#[cfg(target_os = "android")]
+mod mobile;
+```
+
+在对函数进行优化时，可以使用 `#[inline]`将函数内联。建议只用在函数特别小和简单的场景使用，能减少函数调用的开销。
+
+要将属性附着到整个 crate 上，请将其添加到 `main.rs`和`lib.rs`文件到顶部，放在任何语法项之前，并写成`#!`, 而不是 `#`。
+
+```rust
+// libgit2_sys/lib.rs
+
+#![allow(non_camel_case_types)] // 会对整个 crate 生效。
+
+pub struct git_revspec {
+  // ...
+}
+pub struct git_error {
+  // ...
+}
+```
+
+`#![feature]` 属性用于启用 Rust 语言和库的不稳定性，这些特性是实验性的。因此可能有 bug 或者未来可能会被更改或移出。Rust 团队有时会将实验性特性下来，使其成为语言标准的一部分。那时这个 `#![feature]` 属性就会变得多余，因此 Rust 会生成一个警告，建议你将其移除。
