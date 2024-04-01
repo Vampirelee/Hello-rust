@@ -137,4 +137,47 @@ pub mod phloem;
 - 模块位于自己的带有 mod.rs 的目录中
 - 模块在自己的文件中，并带有包含子模块的补充目录
 
+### 路径和导入
+
+`::` 运算符用于访问模块中的各项特性。项目中任何位置的代码都可以通过写出其路径来引用标准库特性
+
+```rust
+if s1 > s2 {
+  std::mem::swap(&mut s1, &mut s2);
+}
+```
+
+`std`是标准库的名称。路径 std 指的是标准库的顶层模块。std::mem 是标准库中的子模块，而 std::mem::swap 是该模块中的公共函数。
+
+可以用这种方式编写所有代码：如果你想要一个园或字典，就明确写出 `std::f64::consts::PI` 或 `std::collections::HashMap::new`。但这样做很繁琐。另一种方法是将这些特性导入使用它们的模块中：
+
+```rust
+use std::mem;
+if s1 > s2 {
+  mem::swap(&mut s1, &mut s2);
+}
+```
+
+`use std::mem`表示名称 `mem`在整个封闭快或模块中成了 `std::mem` 的本地别名。
+
+可以通过 use std::mem::swap 来导入 swap 函数本身，而不是 mem 模块。然而，我们之前的编写风格通常被认为是最好的：**导入类型、特型和模块**，然后使用相对路径访问其中的函数、常量和其他成员。
+
+```rust
+use std::collections::{HashMap, HashSet}; // 同时导入两个模块
+use std::fs::{self, File}; // 同时导入 std::fs 和 std::fs::File。 self表示 fs 本身。
+use std::io::prelude::*; // 导入所有语法项。
+```
+
+可以使用 as 导入一个语法项，但在本地赋予它一个不同的名称
+```rust
+use std::io::Result as IOResult;
+
+// 这个返回类型只是 std::io::Result<()> 的另一种写法
+fn save_spore(spore: &Spore) -> IOResult<()>
+```
+
+- 默认情况下，路径是相对于当前模块的。
+- self 也是当前模块的同义词。
+- super 表示父模块
+- crate 指的是当前 crate
 
