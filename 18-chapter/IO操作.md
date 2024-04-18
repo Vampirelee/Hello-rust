@@ -334,3 +334,118 @@ pub trait Seek {
   - `io::sink()` 这是无操作写入器。所有的写入方法都会返回 Ok，但只是把数据扔掉了。
   - `io::repeat(byte)` 是一个无限重复的读取器。它会返回一个字节重复 `byte` 的迭代器。
 
+## 文件与目录
+
+### OsStr 和 Path
+
+麻烦的是，操作系统并不会强制要求其文件名是有效的 Unicode。下面是创建文本文件的两个 Linux shell 命令。第一个使用了有效的 UTF-8 文件名，第二个则没有
+
+```shell
+echo "hello, world" > ô.txt
+echo "O brave new world, that has such filenames in't" > '\xf4'.text
+```
+
+这两个命令都没有任何报错就通过了，因为 Linux 内核并不检查 UTF-8 的格式有效性。对内核来说，任意字节串(除了 null 字节和斜杠)都是可接受的文件名。在 Windows 上的情况类似:几乎任意 16 位“宽字符”字符串都是可接受的文件名，即使字符串不是有效的 UTF-16 也可以。操作系统处理的其他字符串也是如此，比如命令行参数和环境变量。
+
+Rust 字符串始终是有效的 Unicode。文件名在实践中总是 Unicode，但 Rust 必须以某种方式处理罕见的例外情况。这就是 Rust 会有 std::ffi::OsStr 和 OsString 的原因。
+
+OsStr 是一种字符串类型，它是 UTF-8 的超集。OsStr 的任务是表示当前系统上的所有文件名、命令行参数和环境变量，无论他们是不是有效的 Unicode。在 Unix 上，OsStr 可以保存任意字节序列。 在 Windows 上，OsStr 使用 UTF-8 的扩展格式存储，可以对任意 16 位值序列(包括不符合标准的半代用区码点)进行编码。
+
+所以我们有两种字符串类型:str 用于实际的 Unicode 字符串，而 OsStr 用于操作系统可能抛出的任意文字。还有用于文件名的 std::path::Path，这纯粹是一个便捷名称。Path 与 OsStr 完 全一样，只是添加了许多关于文件名的便捷方法
+
+### Path 与 PathBuf 的方法
+
+Path 提供了以下的方法
+
+- `Path::new(str)` 新建路径
+
+  将 `&str` 或 `&OsStr` 转换为 `&Path`。这不会复制字符串。新的 `&Path` 会指向与原始 `&str` 或 `&OsStr` 相同的字节。
+
+```rust
+use std::path::Path;
+
+let home_dir = Path::new("/home/fwolfe");
+```
+
+- `path.parent()` 父目录
+
+  返回父目录的 `Option<&Path>`。如果路径没有父目录，则返回 `None`。这不会复制路径。path 的父路径一定是 path 的子串。
+
+- `path.file_name()` 文件名
+
+  返回 path 的最后一个组件(如果有的话)。返回类型是 `Option<&OsStr>`。典型情况下，path 由目录、斜杠和文件名组成，此方法会返回文件名。
+
+  ```rust
+  use std::ffi::OsStr;
+  assert_eq!(Path::new("/home/fwolfe/program.txt").file_name(),
+      Some(OsStr::new("program.txt")));
+  ```
+
+- `path.is_absolute()` 是否为绝对路径
+- `path.is_relative()` 是否为相对路径
+
+- `path.join(path)` 联结两个路径，返回一个新的 PathBuf
+
+  ```rust
+  let path1 = Path::new("/usr/share/dict");
+  assert_eq!(path1.join("words"),
+      Path::new("/usr/share/dict/words"));
+  ```
+
+  > 如果 path2 本身是绝对路径，则只会返回 path2 的副本，因此该方法可用于将任意路径转换为绝对路径。
+
+- `path.components()` 路径组件迭代器
+
+  返回一个迭代器，它会生成路径的各个组件。组件是路径中的一部分，比如目录名、文件名或扩展名。组件的类型是 `std::path::Component`，它是一个枚举，可以是 `Normal(OsStr)`、`RootDir`、`CurDir` 或 `ParentDir`。
+
+  ```rust
+  pub enum Component {
+    Prefix(PrefixComponent<'a>), // 驱动器路径或共享路径
+    RootDir, // 根目录 (/)
+    CurDir, // 当前目录 (.)
+    ParentDir, // 父目录 (..)
+    Normal(OsStr), // 其他部分 普通文件或目录名
+  }
+  ```
+
+- `path.ancestors()` 祖先路径迭代器
+
+  返回一个迭代器，它会生成路径的各个祖先。祖先是路径中所有组件的组合，包括根目录。
+
+  ```rust
+  let file = Path::new("/home/jimb/calendars/calendar-18x18.pdf");
+  assert_eq!(
+    file.ancestors().collect::<Vec<_>>(),
+    vec![
+        Path::new("/home/jimb/calendars/calendar-18x18.pdf"),
+        Path::new("/home/jimb/calendars"),
+        Path::new("/home/jimb"),
+        Path::new("/home"),
+        Path::new("/")
+    ]
+  );
+  ```
+
+  这就像在重复调用 parent 直到它返回 None。最后一个条目始终是根路径或前缀路径(Prefix)。
+
+这些方法只针对内存中的字符串进行操作。Path 也有一些能查询文件系统的方法:`.exists()`、`.is_file()`、`.is_dir()`、`.read_dir()`、`.canonicalize()` 等
+
+将 Path 转换为字符串有以下 3 个方法，每个方法都容许 Path 中存在无效 UTF-8。
+
+- `path.to_str()` 转换为 `Option<&str>`
+
+  如果路径中包含无效 UTF-8，则返回 `None`。
+
+- `path.to_string_lossy()` 转换为 `Cow<str>`
+
+  转换为 `Cow<str>`，其中包含原始字节序列，但可能包含无效的 UTF-8。
+
+- `path.display()` 转换为 `Display`
+
+  转换为 `Display`，用于打印路径。
+
+  ```rust
+  println!("Download found. You put it in: {}", dir_path.display());
+  ```
+
+  此方法返回的值不是字符串，但它实现了 `std::fmt::Display`，因此可以与 `format!()`、`println!() `和类似的宏一起使用。如果路径不是有效的 UTF-8，则输出可能包含 � 字符。
