@@ -120,4 +120,121 @@ BufReader 缓冲区的实际大小默认为几千字节，因此一次 read 系�
 
   与 `.read_line()` 和 `.lines()` 类似（这两个是以换行符为分隔符的），但这两个方法是面向字节的，会生成 `Vec<u8>` 而不是 `String`。你要自选分隔符`stop_byte`。
 
+### 读取行
 
+下面是一个用于实现 Unix grep 实用程序的函数，该函数会在多行文本（通常是通过管道从另一条命令输入的文本）中搜索给定字符串
+
+```rust
+use std::io;
+use std::io::prelude::*;
+
+
+fn grep(target: &str) -> io::Result<()> {
+    let stdin = io::stdin();
+    for line_result in stdin.lock().lines() {
+        let line = line_result?;
+        if line.contains(target) {
+            println!("{}", line);
+        }
+    }
+    Ok(())
+}
+```
+
+假如我们想完善这个 grep 程序，让它支持在磁盘上搜索文件。可以把这个函数变成泛型函数
+
+```rust
+fn grep(target: &str, reader: R) -> io::Result<()>
+where R: BufRead
+{
+    for line_result in reader.lines() {
+        let line = line_result?;
+        if line.contains(target) {
+            println!("{}", line);
+        }
+    }
+    Ok(())
+}
+```
+
+### 收集行
+
+有些读取器方法（包括 .lines()）会返回生成 Result 值的迭代器。当你第一次想要将文件的所有行都收集到一个大型向量中时，就会遇到如何摆脱 Result 的问题
+
+```rust
+// 正确，但不是你想要的
+let results: Vec<io::Result<String>> = reader.lines().collect();
+// 错误：不能把Result的集合转换成Vec<String>
+let lines: Vec<String> = reader.lines().collect();
+```
+
+第二次尝试无法编译：遇到这些错误怎么办？最直观的解决方法是编写一个 for 循环并检查每个条目是否有错
+
+```rust
+let mut lines = vec![];
+for line_result in reader.lines() {
+    lines.push(line_result?);
+}
+```
+
+这固然没错，但这里最好还是用 .collect()，事实上确实可以做到。只要知道该请求哪种类型就可以了：
+
+```rust
+let lines = reader.lines().collect::<io::Result<Vec<String>>>()?;
+```
+
+标准库中包含了 Result 对 FromIterator 的实现，这个实现让一切成为可能：
+
+```rust
+impl<T, E, C> FromIterator<Result<T, E>> for Result<C, E>
+  where C: FromIterator<T>
+{
+  //...
+}
+```
+
+假设 C 是任意集合类型，比如` Vec` 或 `HashSet`。只要已经知道如何从 T 值的迭代器构建出 C，就可以从生成 `Result<T, E>` 值的迭代器构建出`Result<C, E>`。只需从迭代器中提取各个值并从 Ok 结果构建出集合即可，但一旦看到 Err，就停止并将其传出。
+
+换句话说，`io::Result<Vec<String>>` 是一种集合类型，因此 `.collect()` 方法可以创建并填充该类型的值。
+
+### 写入器
+
+如前所述，输入主要是用方法完成的，而输出略有不同。
+
+我们一直在使用 `println!()` 生成纯文本输出，还有不会在行尾添加换行符的 `print!()` 宏，以及会写入标准错误流的 `eprintln!` 宏和 `eprint!` 宏。所有这些宏的格式化代码都和 `format!` 宏一样
+
+要将输出发送到写入器，请使用 write!() 宏和 writeln!() 宏。它们和 print!() 和 println!() 类似，但有两点区别
+
+- 一是每个 `write` 宏都接受一个额外的写入器作为第一参数。
+- 二是它们会返回 `Result`，因此必须处理错误。这就是为什么要在每行末尾使用 `?` 运算符
+
+Write 特型的主要方法如下：
+
+- `writer.write(&buffer)` 写入
+
+  将切片 buf 中的一些字节写入底层流。此方法会返回`io::Result<usize>`。成功时，这给出了已写入的字节数，如果流突然提前关闭，那么这个值可能会小于 `buf.len()`。
+
+  > 和 Reader::read() 一样，这是一个要避免直接使用的底层方法。
+
+- `writer.write_all(&buffer)` 写入所有字节
+
+  将切片 buf 中的所有字节都写入。返回 `Result<()>`
+
+- `writer.flush()` 刷新缓冲区
+
+  将可能被缓冲在内存中的数据刷新到底层流中。返回 `Result<()>`
+
+  > 请注意，虽然 println! 宏和 eprintln! 宏会自动刷新 stdout 流和 stderr 流的缓冲区，但 print! 宏和 eprint! 宏不会。使用它们时，可能要手动调用 flush()。
+
+与读取器一样，写入器也会在被丢弃时自动关闭。
+
+正如 `BufReader::new(reader)` 会为任意读取器添加缓冲区一样，`BufWriter::new(writer)` 也会为任意写入器添加缓冲区
+
+```rust
+let file = File::create("tmp.txt")?;
+let writer = BufWriter::new(file);
+```
+
+要设置缓冲区的大小，请使用 `BufWriter::with_capacity(size, writer)`。
+
+当丢弃 `BufWriter` 时，所有剩余的缓冲数据都将写入底层写入器。但是，如果在此写入过程中发生错误，则错误会被忽略。（由于错误发生在 `BufWriter` 的 `.drop()` 方法内部，因此没有合适的地方来报告。）为了确保应用程序会注意到所有输出错误，请在丢弃带缓冲的写入器之前将它手动 `.flush()` 一下。
