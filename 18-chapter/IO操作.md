@@ -238,3 +238,99 @@ let writer = BufWriter::new(file);
 要设置缓冲区的大小，请使用 `BufWriter::with_capacity(size, writer)`。
 
 当丢弃 `BufWriter` 时，所有剩余的缓冲数据都将写入底层写入器。但是，如果在此写入过程中发生错误，则错误会被忽略。（由于错误发生在 `BufWriter` 的 `.drop()` 方法内部，因此没有合适的地方来报告。）为了确保应用程序会注意到所有输出错误，请在丢弃带缓冲的写入器之前将它手动 `.flush()` 一下。
+
+### 文件
+
+- `File::open(path)` 打开文件
+
+  打开一个文件并返回一个 `File` 类型。如果文件不存在或无法打开，则返回 `io::Error`。
+
+- `File::create(path)` 创建文件
+
+  创建一个文件并返回一个 `File` 类型。创建一个用于写入的新文件。如果存在具有给定文件名的文件，则会将其截断。
+
+当这两个方法都不符合需求时，可以使用 OpenOptions 来指定所期望的确切行为
+
+```rust
+use std::fs::OpenOptions;
+
+let log = OpenOptions::new()
+    .append(true) // 如果文件已存在，则追加到末尾
+    .open("server.log")
+    .unwrap();
+
+let file = OpenOptions::new()
+    .write(true)
+    .create_new(true) // 如果文件存在，则会失败
+    .open("new_file.txt")
+    .unwrap();
+```
+
+方法 `.append()`、`.write()`、`.create_new()` 等是可以链式调 用的:每个方法都会返回 self。这种链式调用的设计模式很常见， 所以在 Rust 中它有一个专门的名字——构建器(builder)
+
+### 寻址
+
+`File` 还实现了 `Seek` 特型，这意味着你可以在 `File` 中“跳来跳去”，而不是从头到尾一次性读取或写入。`Seek` 的定义如下：
+
+```rust
+pub enum SeekFrom {
+  Start(u64),
+  End(i64),
+  Current(i64),
+}
+
+pub trait Seek {
+  fn seek(&mut self, pos: SeekFrom) -> io::Result<u64>;
+}
+
+```
+
+此枚举让 seek 方法表现得很好:可以用 file.seek(SeekFrom::Start(0)) 倒回到开头，还能用 file.seek(SeekFrom::Current(-8)) 回退几字节，等等。
+
+> 在文件中寻址很慢。无论使用的是硬盘还是固态驱动器(SSD)，每一次寻址的开销都接近于读取数兆字节的数据。
+
+### 其他读取器与写入器类型
+
+- `io::stdin()` 标准输入
+
+  返回标准输入流的读取器。类型是 `io::Stdin`。由于它被所有线程共享，因此每次读取都会获取和释放互斥锁。
+
+  Stdin 有一个 `.lock()` 方法，该方法会获取互斥锁并返回 `io::StdinLock`，这是一个带缓冲的读取器，在被丢弃之前会持有互斥锁。因此，对 `StdinLock` 的单个操作就避免了互斥开销。
+
+  ```rust
+  let stdin = io::stdin();
+  let lines = stdin.lock().lines();
+  ```
+
+- `io::stdout()` 标准输出 和 `io::stderr()` 标准错误
+
+  返回标准输出流(`Stdout`)类型和标准错误流(`Stderr`)类型的写入器。它们也有互斥锁和 `.lock()` 方法。
+
+- `Vec<u8>` u8 向量
+
+  实现了 Write。写入 `Vec<u8>` 会使用新数据扩展向量。String 没有实现 Write，要使用 Write 构建字符串，需要首先写入 `Vec<u8>`。然后使用 `String::from_utf8(vec)`将向量转换为字符串。
+
+- `Cursor::new(buf)` 新建游标
+
+  创建一个 Cursor（一个从 buf 读取数据等缓冲读取器），这样你就创建了一个能读取 String 的读取器。参数 buf 可以是实现了 `AsRef<[u8]>` 的类型，比如 `&[u8]` 或 `Vec<u8>` 或 `&str`。
+
+  Cursor 的内部平平无奇，只有两个字段: buf 本身和一个整数，该整数是 buf 中下一次读取开始的偏移量。此位置的初始值为 0。
+
+  Cursor 实现了 `Read`、`BufRead` 和 `Seek`。如果 buf 的类型是 `&mut [u8]` 或 `Vec<u8>`，那么 Cursor 也实现了 `Write`。写入游标会覆盖 buf 中从当前位置开始的字节。如果试图直接写到超出 `&mut [u8]` 末尾的位置，就会导致一次“部分写入”或一个 io::Error。不过，使用游标写入 `Vec<u8>` 的结尾就没有这个问题:它会增长此向量。因此，`Cursor<&mut [u8]>` 和 `Cursor<Vec<u8>>` 实现了所有这 4 个 `std::io::prelude` 特型。
+
+- `std::net::TcpStream` Tcp 流
+
+  表示 TCP 网络连接。由于 TCP 支持双向通信，因此它既是读取器又是写入器。
+
+  类型关联函数 `TcpStream::connect(("hostname", PORT))` 会尝试连接到服务器并返回 `io::Result<TcpStream>`
+
+- `std::process::Command` 命令
+
+  支持启动子进程并通过管道将数据传输到其标准输入
+
+- `std::io` 模块还提供了一些返回普通读取器和写入器的函数
+
+  - `io::empty()` 这是无操作读取器。读取总会成功，但只会返回“输入结束”(EOF)。
+  - `io::sink()` 这是无操作写入器。所有的写入方法都会返回 Ok，但只是把数据扔掉了。
+  - `io::repeat(byte)` 是一个无限重复的读取器。它会返回一个字节重复 `byte` 的迭代器。
+
