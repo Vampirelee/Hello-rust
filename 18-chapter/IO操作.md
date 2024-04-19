@@ -449,3 +449,67 @@ let home_dir = Path::new("/home/fwolfe");
   ```
 
   此方法返回的值不是字符串，但它实现了 `std::fmt::Display`，因此可以与 `format!()`、`println!() `和类似的宏一起使用。如果路径不是有效的 UTF-8，则输出可能包含 � 字符。
+
+### 读取目录
+
+要列出目录的内容，请使用 `std::fs::read_dir()` 或 Path 中的等效方法 `.read_dir()`
+
+```rust
+for entry_result in path.read_dir()? {
+    let entry = entry_result?;
+    println!("{}", entry.file_name().to_string_lossy());
+}
+```
+
+注意，在这段代码中有两行用到了 ? 运算符。第 1 行检查了打开目录时的错误。第 2 行检查了读取下一个条目时的错误。
+
+entry 的类型是 `std::fs::DirEntry`, 这个结构体提供了数个方法。
+
+- `entry.file_name()` 文件名
+
+  文件或目录的名称，是 OsString 类型的。
+
+- `entry.path()` 路径
+
+  与 `entry.file_name()` 基本相同，但 `entry.path()` 联结了原始路径，生成了一个新的 `PathBuf`。如果正在列出的目录是`"/home/jimb"`，并且 `entry.file_name()` 是 `".emacs"`，那么` entry.path()` 将返回`PathBuf::from("/home/jimb/.emacs")`
+
+- `entry.file_type()` 文件类型
+
+  返回 `io::Result<FileType>` `FileType` 有 `.is_file()`、`.is_dir()`、`.is_symlink()` 方法。
+
+- `entry.metadata()` 元数据
+
+  返回 `io::Result<Metadata>` 元数据包含文件大小、权限、创建时间、修改时间等信息。
+
+> 特殊目录 . 和 .. 在读取目录时不会列出
+
+下面是一个更接近现实的例子。以下代码会递归地将目录树从磁盘上的一个位置复制到另一个位置
+
+```rust
+/// 把`src`中的任何内容复制到目标路径`dst`
+fn copy_to(src: &Path, src_type: &fs::FileType, dst: &Path) -> io::Result<()> {
+    if src_type.is_file() {
+        fs::copy(src, dst)?;
+    } else if src_type.is_dir() {
+        copy_dir_to(src, dst)?;
+    } else {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("don't know how to copy: {}", src.display()),
+        ));
+    }
+    Ok(())
+}
+/// 把现有目录`src`复制到目标路径`dst`
+fn copy_dir_to(src: &Path, dst: &Path) -> io::Result<()> {
+    if !dst.is_dir() {
+        fs::create_dir(dst)?;
+    }
+    for entry_result in src.read_dir()? {
+        let entry = entry_result?;
+        let file_type = entry.file_type()?;
+        copy_to(&entry.path(), &file_type, &dst.join(entry.file_name()))?;
+    }
+    Ok(())
+}
+```
