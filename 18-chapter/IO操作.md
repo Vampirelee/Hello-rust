@@ -513,3 +513,35 @@ fn copy_dir_to(src: &Path, dst: &Path) -> io::Result<()> {
     Ok(())
 }
 ```
+
+## 网络
+
+要编写较底层的网络代码，可以使用 `std::net` 模块，该模块为 TCP 网络和 UDP 网络提供了跨平台支持。可以使用 `native_tlscrate` 来支持 `SSL/TLS`。
+
+这些模块为网络上直接的、阻塞型的输入和输出提供了一些基础构件。用几行代码就可以编写一个简单的服务器，只要使用 std::net 并为每个连接启动一个线程即可。例如，下面是一个“回显”（echo）服务器
+
+```rust
+use std::io;
+use std::net::TcpListener;
+use std::thread::spawn;
+
+fn main() -> () {
+    echo_main("127.0.0.1:17007").expect("error: ");
+}
+
+fn echo_main(addr: &str) -> io::Result<()> {
+    let listener = TcpListener::bind(addr)?;
+    println!("Listening on: {}", addr);
+
+    loop {
+        let (mut stream, addr) = listener.accept()?;
+        println!("connection received from {}", addr);
+
+        let mut write_stream = stream.try_clone()?;
+        spawn(move || {
+            io::copy(&mut stream, &mut write_stream).expect("error in client thread: ");
+            println!("connection closed");
+        });
+    }
+}
+```
